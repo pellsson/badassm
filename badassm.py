@@ -296,6 +296,6 @@ print('Pass 3')
 b = build(instr, labels)
 
 name = os.path.splitext(sys.argv[1])[0]
-open('out.bin', 'wb').write(b)
+open(name + '.bin', 'wb').write(b)
 open(name + '.map', 'wb').write(bytearray(''.join([ '%s @ %04X\n' % (k, v) for k, v in labels.items() ]), 'utf-8'))
 
