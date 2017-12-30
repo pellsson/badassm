@@ -236,13 +236,13 @@ def assemble(code, defs):
 
 def get_byte(e):
 	v = run_eval(e)
-	if v > 0xff:
+	if None == v or v > 0xff:
 		return None
 	return [ v ]
 
 def get_word(e):
 	v = run_eval(e)
-	if v > 0xffff:
+	if None == v or v > 0xffff:
 		return None
 	return [ (v & 0xff), (v >> 8) ]
 
