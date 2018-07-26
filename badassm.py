@@ -19,6 +19,7 @@
 import sys
 import re
 import os
+import json
 
 def run_eval(e, env = {}):
 	try:
@@ -26,6 +27,9 @@ def run_eval(e, env = {}):
 	except:
 		return None
 	return res
+
+def read_file(filename):
+	 return [ it.decode('utf-8') for it in open(filename, 'rb').readlines() ]
 
 def read_defines(code):
 	defs = {}
@@ -88,9 +92,19 @@ def parse_expr(defs, e, outer=True):
 		res = run_eval(e, defs)
 	return { 'expanded': e, 'unresolved': unresolved, 'res': res }
 
+def parse_int(nr, defs, e, force_byte = False):
+	p = parse_expr(defs, e)
+	if p['unresolved']:
+		error_at(nr, 'Expected an integer')
+	if force_byte and p['res'] > 0xff:
+		error_at(nr, 'Value does not fit in a byte')
+	elif p['res'] > 0xffff:
+		error_at(nr, 'Value too big to fit in a word')
+	return p['res']
 
 def assemble(code, defs):
 	pc = 0
+	org_base = 0
 	labels = {}
 	table = {
 		'adc': { 'I': 0x69, 'Z': 0x65, 'ZX': 0x75, 'A': 0x6D, 'AX': 0x7D, 'AY': 0x79, 'RX': 0x61, 'RY': 0x71 },
@@ -103,6 +117,7 @@ def assemble(code, defs):
 		'bmi': { 'B': 0x30 },
 		'bne': { 'B': 0xD0 },
 		'bpl': { 'B': 0x10 },
+		'brk': { 'N': 0x00 },
 		'clc': { 'N': 0x18 },
 		'cld': { 'N': 0xD8 },
 		'cmp': { 'I': 0xC9, 'Z': 0xC5, 'ZX': 0xD5, 'A': 0xCD, 'AX': 0xDD, 'AY': 0xD9, 'RX': 0xC1, 'RY': 0xD1 },
@@ -161,6 +176,9 @@ def assemble(code, defs):
 		if not line:
 			continue
 
+		if ',' == line[-1]:
+			error_at(nr, 'Missing parameter.')
+
 		if '.' == line[0]:
 			v = line.split(' ', 1)
 			if '.db' == v[0] or '.dw' == v[0]:
@@ -177,11 +195,27 @@ def assemble(code, defs):
 				if p['unresolved']:
 					error_at(nr, 'Invalid org parameter')
 				pc = p['res']
+				org_base = p['res']
 			elif '.index' == v[0] or '.mem' == v[0]:
 				if '8' != v[1].strip():
 					error_at(nr, 'Only 8-bit memory and operand mode supported.')
+			elif '.seekoff' == v[0]:
+				args = v[1].split(' ')
+				if 2 != len(args):
+					error_at(nr, '.seekoff takes exactly two arguments: <absolute_zerobased_offset> <padding_byte>')
+				off = parse_int(nr, defs, args[0].strip())
+				bv = parse_int(nr, defs, args[1].strip(), True)
+				if off < (pc - org_base):
+					error_at(nr, "You can't seek backwards, PC ahead of offset")
+				pad_count = (off - (pc - org_base))
+				print("Seek offset - Writing %02X for %d bytes" % (bv, pad_count))
+				for i in range(0, pad_count):
+					instr.append(instruction(nr, pc, _db, str(bv), 'I'))
+					pc += 1
+			elif '.vars' == v[0]:
+				defs.update(read_defines(read_file(v[1].strip())))
 			else:
-				print('Unsupported directive: "%s"' % (line))
+				error_at(nr, 'Unsupported directive: "%s"' % (line))
 		else:
 			m = re.match(r'([a-z]+)\s*(.*)?', line)
 			if not m:
@@ -234,33 +268,41 @@ def assemble(code, defs):
 			pc += instr[-1]['size']
 	return instr, labels
 
-def get_byte(e):
+def get_byte(nr, e):
 	v = run_eval(e)
-	if None == v or v > 0xff:
+	if None == v:
 		return None
+	if v > 0xff:
+		error_at(nr, 'Value (%d) too large to fit in a byte.' % (v))
 	return [ v ]
 
-def get_word(e):
+def get_word(nr, e):
 	v = run_eval(e)
-	if None == v or v > 0xffff:
+	if None == v:
 		return None
+	if v > 0xffff:
+		error_at(nr, 'Value (%d) too large to fit in a word.' % (v))
 	return [ (v & 0xff), (v >> 8) ]
 
 def build_operand(inst, labels):
+	global use_linker
 	if 'N' == inst['otype']:
 		return []
 	p = parse_expr(labels, inst['opr'])
 	if p['unresolved']:
-		error_at(inst['nr'], 'Unresolved symbol.')
+		if not use_linker:
+			error_at(inst['nr'], 'Unresolved symbol (operand: %s).' % (inst['opr']))
+		elif inst['size'] != 3:
+			error_at(inst['nr'], 'Relative and RAM symbols must not be undefined (operand: %s).' % (inst['opr']))
 		return None
 	if 'I' == inst['otype']:
-		return get_byte(p['expanded'])
+		return get_byte(inst['nr'], p['expanded'])
 	elif 'R' == inst['otype'] or 'A' == inst['otype'] or 'AX' == inst['otype'] or 'AY' == inst['otype']:
-		return get_word(p['expanded'])
+		return get_word(inst['nr'], p['expanded'])
 	elif 'RX' == inst['otype'] or 'RY' == inst['otype']:
-		return get_byte(p['expanded'])
+		return get_byte(inst['nr'], p['expanded'])
 	elif 'Z' == inst['otype'] or 'ZX' == inst['otype'] or 'ZY' == inst['otype']:
-		return get_byte(p['expanded'])
+		return get_byte(inst['nr'], p['expanded'])
 	elif 'B' == inst['otype']:
 		v = run_eval(p['expanded'], labels)
 		dist = (v - (inst['pc'] + 2))
@@ -272,30 +314,40 @@ def build_operand(inst, labels):
 	return []
 
 def build(instr, labels):
+	undef = []
 	data = []
 	for it in instr:
 		operand = build_operand(it, labels)
 		if None == operand:
-			error_at(it['nr'], 'Invalid operand.')
+			undef.append({ 'off': len(data) + (1 if it['opc'] >= 0 else 0), 'ref': it['opr']})
+			operand = [ 0, 0 ]
 		if it['opc'] >= 0:
 			data += [ it['opc'] ]
 		data += operand
-	return bytearray(data)
+	return bytearray(data), undef
 
 
 if len(sys.argv) < 2:
-	print('Usage: %s <infile>' % (sys.argv[0]))
+	print('Usage: %s <infile> [--use-linker]' % (sys.argv[0]))
 
-code = [ it.decode('utf-8') for it in open(sys.argv[1], 'rb').readlines() ]
+use_linker = False
+if len(sys.argv) > 2:
+	use_linker = '--use-linker' == sys.argv[2]
+	print("Assuming a linker will be used, undefined symbols allowed.")
+
+code = read_file(sys.argv[1])
 print('Assembling: %s (%d lines)' % (sys.argv[1], len(code)))
 print('Pass 1')
 defs = read_defines(code)
 print('Pass 2')
 instr, labels = assemble(code, defs)
 print('Pass 3')
-b = build(instr, labels)
+b, undef = build(instr, labels)
 
 name = os.path.splitext(sys.argv[1])[0]
 open(name + '.bin', 'wb').write(b)
-open(name + '.map', 'wb').write(bytearray(''.join([ '%s @ %04X\n' % (k, v) for k, v in labels.items() ]), 'utf-8'))
+open(name + '.map', 'w').write(''.join([ '%s @ %04X\n' % (k, v) for k, v in labels.items() ]))
+if len(undef):
+	open(name + '.und', 'w').write(json.dumps(undef))
 
+print('Output file: %s (%d bytes)' % (name + '.bin', len(b)))
