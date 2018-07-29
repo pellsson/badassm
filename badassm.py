@@ -171,7 +171,10 @@ def assemble(code, defs):
 			m = re.match(r'(\s*[A-Za-z_][A-Za-z_0-9]*):.*', line)
 			if not m:
 				break
-			labels[m.group(1).strip()] = pc
+			lbl = m.group(1).strip()
+			if lbl in labels:
+				error_at(nr, 'Label %s already defined.' % (lbl))
+			labels[lbl] = pc
 			line = line[len(m.group(1)) + 1:].strip()
 		if not line:
 			continue
@@ -269,7 +272,7 @@ def assemble(code, defs):
 	return instr, labels
 
 def get_byte(nr, e):
-	v = run_eval(e)
+	v = int(run_eval(e))
 	if None == v:
 		return None
 	if v > 0xff:
@@ -277,7 +280,7 @@ def get_byte(nr, e):
 	return [ v ]
 
 def get_word(nr, e):
-	v = run_eval(e)
+	v = int(run_eval(e))
 	if None == v:
 		return None
 	if v > 0xffff:
