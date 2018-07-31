@@ -104,7 +104,6 @@ def parse_int(nr, defs, e, force_byte = False):
 
 def assemble(code, defs):
 	pc = 0
-	org_base = 0
 	labels = {}
 	table = {
 		'adc': { 'I': 0x69, 'Z': 0x65, 'ZX': 0x75, 'A': 0x6D, 'AX': 0x7D, 'AY': 0x79, 'RX': 0x61, 'RY': 0x71 },
@@ -198,20 +197,25 @@ def assemble(code, defs):
 				if p['unresolved']:
 					error_at(nr, 'Invalid org parameter')
 				pc = p['res']
-				org_base = p['res']
 			elif '.index' == v[0] or '.mem' == v[0]:
 				if '8' != v[1].strip():
 					error_at(nr, 'Only 8-bit memory and operand mode supported.')
+			elif '.incbin' == v[0]:
+				args = v[1].strip()
+				data = open(v[1], 'rb').read()
+				for it in data:
+					instr.append(instruction(nr, pc, _db, str(it), 'I'))
+					pc += 1
 			elif '.seekoff' == v[0]:
 				args = v[1].split(' ')
 				if 2 != len(args):
 					error_at(nr, '.seekoff takes exactly two arguments: <absolute_zerobased_offset> <padding_byte>')
 				off = parse_int(nr, defs, args[0].strip())
 				bv = parse_int(nr, defs, args[1].strip(), True)
-				if off < (pc - org_base):
+				if off < pc:
 					error_at(nr, "You can't seek backwards, PC ahead of offset")
-				pad_count = (off - (pc - org_base))
-				print("Seek offset - Writing %02X for %d bytes" % (bv, pad_count))
+				pad_count = (off - pc)
+				print("Seek offset - Writing %02X for %d bytes (from pc: %04X)" % (bv, pad_count, pc))
 				for i in range(0, pad_count):
 					instr.append(instruction(nr, pc, _db, str(bv), 'I'))
 					pc += 1
