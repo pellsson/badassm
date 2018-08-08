@@ -238,7 +238,7 @@ def assemble(code, defs):
 					error_at(nr, 'Too many operands')
 				if '#' == opr[0][0]:
 					v = parse_expr(defs, opr[0][1:])
-					if v['unresolved'] or v['res'] > 0xff:
+					if v['unresolved'] and v['res'] > 0xff:
 						error_at(nr, 'Invalid immediate value.')
 					expr = v['expanded']
 					opr_type = 'I'
