@@ -31,15 +31,17 @@ def run_eval(e, env = {}):
 def read_file(filename):
 	 return [ it.decode('utf-8') for it in open(filename, 'rb').readlines() ]
 
-def read_defines(code):
-	defs = {}
+def read_defines(defs, code):
 	for i in range(0, len(code)):
-		m = re.match(r'([A-Za-z_][A-Za-z_0-9]*)\s*=\s*([^;]+)', code[i])
+		m = re.match(r'([A-Za-z_][A-Za-z_0-9]*)\s*(\?)?=\s*([^;]+)', code[i])
 		if not m:
 			continue
-		defs[m.group(1)] = m.group(2).strip()
+		if '?' == m.group(2):
+			if m.group(1) not in defs:
+				defs[m.group(1)] = m.group(3).strip()
+		else:
+			defs[m.group(1)] = m.group(3).strip()
 		code[i] = ''
-	return defs
 
 def make_opc(v, opr): return { 'opc': v, 'opr': opr }
 
@@ -163,6 +165,8 @@ def assemble(code, defs):
 	_dw = { 'A': -2 }
 
 	instr = []
+	exclude_lines = False
+
 	for i in range(0, len(code)):
 		nr = i + 1
 		line = code[i].split(';', 1)[0].strip()
@@ -180,7 +184,6 @@ def assemble(code, defs):
 
 		if ',' == line[-1]:
 			error_at(nr, 'Missing parameter.')
-
 		if '.' == line[0]:
 			v = line.split(' ', 1)
 			if '.db' == v[0] or '.dw' == v[0]:
@@ -197,6 +200,12 @@ def assemble(code, defs):
 				if p['unresolved']:
 					error_at(nr, 'Invalid org parameter')
 				pc = p['res']
+			elif '.if' == v[0]:
+				p = parse_expr(defs, v[1])
+				if p['unresolved'] or not p['res']:
+					exclude_lines = True
+			elif '.endif' == v[0]:
+				exclude_lines = False
 			elif '.index' == v[0] or '.mem' == v[0]:
 				if '8' != v[1].strip():
 					error_at(nr, 'Only 8-bit memory and operand mode supported.')
@@ -220,10 +229,10 @@ def assemble(code, defs):
 					instr.append(instruction(nr, pc, _db, str(bv), 'I'))
 					pc += 1
 			elif '.vars' == v[0]:
-				defs.update(read_defines(read_file(v[1].strip())))
+				read_defines(defs, read_file(v[1].strip()))
 			else:
 				error_at(nr, 'Unsupported directive: "%s"' % (line))
-		else:
+		elif not exclude_lines:
 			m = re.match(r'([a-z]+)\s*(.*)?', line)
 			if not m:
 				error_at(nr, "Was expecting opcode, don't understand")
@@ -335,17 +344,24 @@ def build(instr, labels):
 
 
 if len(sys.argv) < 2:
-	print('Usage: %s <infile> [--use-linker]' % (sys.argv[0]))
+	print('Usage: %s <infile> [-DDEF=N|--use-linker]' % (sys.argv[0]))
 
 use_linker = False
-if len(sys.argv) > 2:
-	use_linker = '--use-linker' == sys.argv[2]
-	print("Assuming a linker will be used, undefined symbols allowed.")
+defs = {}
+
+for i in range(2, len(sys.argv)):
+	if '--use-linker' == sys.argv[i]:
+		use_linker = True
+		print("Assuming a linker will be used, undefined symbols allowed.")
+	elif '-D' == sys.argv[i][0:2]:
+		d = sys.argv[i][2:].split('=')
+		defs[d[0]] = d[1]
+
 
 code = read_file(sys.argv[1])
 print('Assembling: %s (%d lines)' % (sys.argv[1], len(code)))
 print('Pass 1')
-defs = read_defines(code)
+read_defines(defs, code)
 print('Pass 2')
 instr, labels = assemble(code, defs)
 print('Pass 3')
