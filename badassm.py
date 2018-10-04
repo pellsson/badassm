@@ -29,7 +29,7 @@ def run_eval(e, env = {}):
 	return res
 
 def read_file(filename):
-	 return [ it.decode('utf-8') for it in open(filename, 'rb').readlines() ]
+	 return [ it.decode('utf-8', errors = 'ignore') for it in open(filename, 'rb').readlines() ]
 
 def read_defines(defs, code):
 	for i in range(0, len(code)):
@@ -121,6 +121,7 @@ def assemble(code, defs):
 		'brk': { 'N': 0x00 },
 		'clc': { 'N': 0x18 },
 		'cld': { 'N': 0xD8 },
+		'cli': { 'N': 0x58 },
 		'cmp': { 'I': 0xC9, 'Z': 0xC5, 'ZX': 0xD5, 'A': 0xCD, 'AX': 0xDD, 'AY': 0xD9, 'RX': 0xC1, 'RY': 0xD1 },
 		'cpx': { 'I': 0xE0, 'Z': 0xE4, 'A': 0xEC },
 		'cpy': { 'I': 0xC0, 'Z': 0xC4, 'A': 0xCC },
