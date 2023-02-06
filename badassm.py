@@ -5,16 +5,10 @@
 # assembler, it should be consider a 
 # "build that smb-disassembly file"-compatible assembler.
 #
-# Please don't hate me for it. I hacked it together quick
-# as fuck be because building SMB with dosbox took ages
-# and was annoying me terribly.
-#
 # It runs eval() on every expression and operand,
 # like a million times, so be careful :)
 #
 # SMB: https://gist.github.com/1wErt3r/4048722
-#
-# Enjoy. Or don't. Probably don't.
 #
 import sys
 import re
